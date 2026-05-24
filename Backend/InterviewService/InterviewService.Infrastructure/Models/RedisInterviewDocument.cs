@@ -1,0 +1,32 @@
+using Redis.OM.Modeling;
+using InterviewService.Core.Models;
+
+namespace InterviewService.Infrastructure.Models;
+
+/// <summary>
+/// Redis OM document for active or not-yet-archived interview state.
+/// </summary>
+[Document(StorageType = StorageType.Json, Prefixes = ["interviews:v5:active"])]
+public sealed class RedisInterviewDocument
+{
+    [RedisIdField]
+    [Indexed]
+    public Guid Id { get; set; }
+
+    [Indexed]
+    public Guid SetupHashGuid { get; set; }
+
+    public List<Answer> RequiredAnswers { get; set; } = [];
+
+    public List<InterviewStep> CompletedDynamicSteps { get; set; } = [];
+
+    public Question? CurrentQuestion { get; set; }
+
+    public UserProfile? Conclusion { get; set; }
+
+    [Indexed]
+    public long LastTouchedAt { get; set; }
+
+    [Indexed]
+    public bool IsFinished { get; set; }
+}

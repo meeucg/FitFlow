@@ -1,0 +1,269 @@
+name: apigateway
+
+services:
+  frontend:
+    image: fitflow-frontend
+    build:
+      context: ./Frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:80"
+    depends_on:
+      keycloak:
+        condition: service_started
+      apigateway:
+        condition: service_started
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.console.libraries=/usr/share/prometheus/console_libraries
+      - --web.console.templates=/usr/share/prometheus/consoles
+      - --web.enable-lifecycle
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      apigateway:
+        condition: service_started
+      feedcore:
+        condition: service_started
+      interview-grpc-api:
+        condition: service_started
+      raw-postings-filter:
+        condition: service_started
+      parsermock:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./observability/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      prometheus:
+        condition: service_started
+
+  apigateway:
+    image: apigateway
+    build:
+      context: ./Backend/ApiGateway
+      dockerfile: ApiGateway/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+    ports:
+      - "5266:8080"
+    depends_on:
+      keycloak:
+        condition: service_started
+      apigateway-postgres:
+        condition: service_healthy
+      interview-grpc-api:
+        condition: service_started
+      feedcore:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+      raw-postings-filter:
+        condition: service_started
+
+  feedcore:
+    image: fitflow-feedcore
+    build:
+      context: ./Backend/FeedCore
+      dockerfile: FeedCore/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+    ports:
+      - "7301:8080"
+      - "7302:8081"
+    depends_on:
+      feedcore-postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  raw-postings-filter:
+    image: fitflow-raw-postings-filter
+    build:
+      context: ./Backend/RawPostingsFilter
+      dockerfile: RawPostingsFilter/Dockerfile
+    depends_on:
+      raw-postings-filter-postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+    ports:
+      - "5089:8080"
+
+  parsermock:
+    image: fitflow-parsermock
+    build:
+      context: ./Backend/Parsers/ParserMock
+      dockerfile: ParserMock/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+    ports:
+      - "5088:8080"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  interview-grpc-api:
+    image: fitflow-interview-grpc-api
+    build:
+      context: ./Backend/InterviewService
+      dockerfile: InterviewService.Api/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+    ports:
+      - "7297:8080"
+      - "7298:8081"
+    depends_on:
+      interview-postgres-auth:
+        condition: service_healthy
+      interview-redis:
+        condition: service_started
+
+  raw-postings-filter-postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: raw_postings_filter
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - raw-postings-filter-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d raw_postings_filter"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  feedcore-postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: fitflow_feedcore
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - feedcore-postgres-data:/var/lib/postgresql/data
+    ports:
+      - "55434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d fitflow_feedcore"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  apigateway-postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: fitflow_gateway
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - apigateway-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d fitflow_gateway"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.2
+    command:
+      - start-dev
+      - --import-realm
+      - --spi-theme-static-max-age=-1
+      - --spi-theme-cache-themes=false
+      - --spi-theme-cache-templates=false
+      - --hostname=http://localhost:8080
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL_HOST: keycloak-postgres
+      KC_DB_URL_DATABASE: keycloak
+      KC_DB_USERNAME: postgres
+      KC_DB_PASSWORD: postgres
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./Backend/ApiGateway/keycloak/realm:/opt/keycloak/data/import:ro
+      - ./Backend/ApiGateway/keycloak/themes:/opt/keycloak/themes:ro
+    depends_on:
+      keycloak-postgres:
+        condition: service_healthy
+
+  keycloak-postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - keycloak-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  interview-postgres-auth:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: fitflow_interviews
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - interview-postgres-auth-data-2:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d fitflow_interviews"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  interview-redis:
+    image: redis/redis-stack:latest
+    ports:
+      - "56379:6379"
+      - "58001:8001"
+
+volumes:
+  apigateway-postgres-data:
+  feedcore-postgres-data:
+  grafana-data:
+  interview-postgres-auth-data-2:
+  keycloak-postgres-data:
+  prometheus-data:
+  raw-postings-filter-postgres-data:

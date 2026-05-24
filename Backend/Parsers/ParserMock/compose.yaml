@@ -1,0 +1,22 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  parsermock:
+    image: parsermock
+    build:
+      context: .
+      dockerfile: ParserMock/Dockerfile
+    ports:
+      - "5088:8080"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy

@@ -1,0 +1,12 @@
+.idea/
+**/bin/
+**/obj/
+TestResults/
+*.user
+*.suo
+appsettings*.json
+!InterviewService.Api/appsettings.json
+!InterviewService.Api/appsettings.Development.json
+.env
+.env.*
+*.log

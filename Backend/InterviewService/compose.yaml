@@ -1,0 +1,39 @@
+services:
+  interview-grpc-api:
+    image: fitflow-interview-grpc-api
+    build:
+      context: .
+      dockerfile: InterviewService.Api/Dockerfile
+    ports:
+      - "7297:8080"
+    depends_on:
+      interview-postgres:
+        condition: service_healthy
+      interview-redis:
+        condition: service_started
+
+  interview-postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: fitflow_interviews
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "55432:5432"
+    volumes:
+      - interview-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d fitflow_interviews"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  interview-redis:
+    image: redis/redis-stack:latest
+    ports:
+      - "56379:6379"
+      - "58001:8001"
+
+volumes:
+  interview-postgres-data:
+

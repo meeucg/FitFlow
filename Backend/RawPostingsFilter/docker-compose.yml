@@ -1,0 +1,33 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  raw-postings-filter-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: raw_postings_filter
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d raw_postings_filter"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: RawPostingsFilter/Dockerfile
+    depends_on:
+      raw-postings-filter-postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy

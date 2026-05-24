@@ -1,0 +1,18 @@
+# Build outputs
+**/bin/
+**/obj/
+**/.vs/
+**/.idea/
+**/.vscode/
+
+# Local runtime and secret-bearing config
+**/appsettings.json
+!**/appsettings.Development.json
+**/.env
+
+# Local package artifacts
+**/*.nupkg
+**/*.snupkg
+
+# Logs
+**/*.log

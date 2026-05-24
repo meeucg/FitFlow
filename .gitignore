@@ -1,0 +1,33 @@
+# Build outputs
+**/bin/
+**/obj/
+**/.vs/
+**/.idea/
+**/.vscode/
+
+# Dependencies
+**/node_modules/
+
+# Local runtime and secret-bearing config
+**/appsettings.json
+!**/appsettings.Development.json
+**/.env
+**/*.session
+**/*.session-journal
+
+# Parser runtime outputs
+**/*_seen.json
+**/orders.jsonl
+**/result.jsonl
+**/kwork_result.json
+**/kwork_result_with_extensions.json
+!Backend/Parsers/ParserMock/ParserMock/result.jsonl
+!Backend/Parsers/ParserMock/ParserMock/kwork_result_with_extensions.json
+
+# Archives and local packages
+**/*.zip
+**/*.nupkg
+**/*.snupkg
+
+# Logs
+**/*.log
