@@ -14,50 +14,98 @@ The core idea is simple: instead of manually watching many marketplaces and tryi
 
 ## High Level Architecture
 
-The diagram below follows the high-level architecture sketch from the project notes.
+The diagram below recreates the high-level architecture sketch from the project notes.
 
 ```mermaid
-flowchart LR
-    external["External services<br/>Kwork, Telegram, FL.ru,<br/>freelance.ru"]
-    parsers["Parsers"]
-    rabbit["RabbitMQ"]
-    raw["RawPostingsFilter<br/><br/>Removes very short vacancies<br/>Deduplicates postings<br/>AI-normalizes content"]
-    rawTextAi["TextAI"]
-    rawDb[("PostgreSQL")]
-    feed["FeedCore<br/><br/>Stores normalized vacancies<br/>Stores embeddings<br/>Builds recommendations"]
-    feedDb[("PostgreSQL + pgvector")]
-    embeddingAi["Embedding AI"]
+flowchart TB
+    classDef service fill:#ffffff,stroke:#222222,stroke-width:2px,color:#222222;
+    classDef store fill:#ffffff,stroke:#222222,stroke-width:2px,color:#222222;
+    classDef external fill:#ffffff,stroke:#222222,stroke-width:2px,color:#222222;
+    classDef note fill:transparent,stroke:transparent,color:#222222;
+    classDef hidden fill:transparent,stroke:transparent,color:transparent;
 
-    gateway["ApiGateway<br/><br/>Single backend entry point<br/>REST, SSE, gRPC clients<br/>Recommendation event worker"]
-    frontend["Frontend"]
-    keycloak["Keycloak<br/><br/>Authentication and authorization<br/>OIDC + TOTP"]
-    interview["InterviewService<br/><br/>Stores and runs interviews"]
-    interviewTextAi["TextAI"]
-    interviewDb[("PostgreSQL")]
-    redis[("Redis")]
+    subgraph topSupport[" "]
+        direction LR
+        topBlank1[" "]:::hidden
+        topBlank2[" "]:::hidden
+        rawTextAI@{ shape: tri, label: "TextAI" }
+        rawPg[("pgsql")]
+        feedNote["• Хранение + embedding<br/>нормализованных<br/>вакансий<br/>• Рекомендации"]:::note
+        feedPg[("pgsql")]
+    end
 
-    external --> parsers
-    parsers -->|raw postings| rabbit
-    rabbit -->|raw-postings.incoming| raw
-    raw --> rawTextAi
-    raw --> rawDb
-    raw -->|normalized postings| rabbit
-    rabbit -->|feed-core.normalized-postings| feed
+    subgraph ingestion[" "]
+        direction LR
+        externalServices@{ shape: tri, label: "Kwork, tg, fl,<br/>freelance.ru" }
+        parsers["Parsers"]:::service
+        rawFilter["RawPostingsFilter"]:::service
+        feedCore["FeedCore"]:::service
+        embeddingAI@{ shape: tri, label: "Embeding<br/>AI" }
+    end
 
-    feed --> feedDb
-    feed --> embeddingAi
-    feed -->|recommendation.created| rabbit
-    rabbit -->|recommendation events| gateway
+    subgraph topNotes[" "]
+        direction LR
+        externalNote["External services"]:::note
+        noteBlank1[" "]:::hidden
+        rawNote["• Удаление вакансий<br/>меньше 20 слов<br/>• Дедупликация<br/>• ИИ-нормализация"]:::note
+        noteBlank2[" "]:::hidden
+    end
 
-    gateway -->|gRPC| feed
-    gateway -->|gRPC| interview
-    gateway -->|HTTP auth flow| keycloak
-    interview --> interviewTextAi
-    interview --> interviewDb
-    interview --> redis
+    subgraph middleSupport[" "]
+        direction LR
+        interviewTextAI@{ shape: tri, label: "TextAI" }
+        midBlank1[" "]:::hidden
+        workerNote["Worker"]:::note
+    end
 
-    frontend -->|HTTP API| gateway
-    gateway -->|SSE live updates| frontend
+    subgraph middle[" "]
+        direction LR
+        interviewNote["• Хранение и<br/>проведение<br/>интервью"]:::note
+        interviewService["InterviewService"]:::service
+        apiGateway["ApiGateway"]:::service
+        keycloak["Keycloak"]:::service
+        keycloakNote["• Authentication/Auth<br/>orization (OIDC +<br/>TOTP)"]:::note
+    end
+
+    subgraph lower[" "]
+        direction LR
+        interviewPg[("pgsql")]
+        interviewRedis[("redis")]
+        gatewayNote["• Общая точка входа"]:::note
+        frontend["Frontend"]:::service
+    end
+
+    externalServices --> parsers
+    parsers -->|RabbitMq| rawFilter
+    rawFilter -->|RabbitMq| feedCore
+    feedCore --> embeddingAI
+
+    rawFilter --> rawTextAI
+    rawFilter --> rawPg
+    feedCore --> feedPg
+
+    interviewService --> interviewTextAI
+    interviewService --> interviewPg
+    interviewService --> interviewRedis
+
+    apiGateway -->|grpc| interviewService
+    apiGateway -->|http| keycloak
+    apiGateway -->|grpc| feedCore
+    feedCore -->|RabbitMq| workerNote
+    workerNote --> apiGateway
+
+    apiGateway -->|SSE| frontend
+    frontend -->|Http| apiGateway
+
+    class rawTextAI,externalServices,embeddingAI,interviewTextAI external;
+    class rawPg,feedPg,interviewPg,interviewRedis store;
+
+    style topSupport fill:transparent,stroke:transparent
+    style ingestion fill:transparent,stroke:transparent
+    style topNotes fill:transparent,stroke:transparent
+    style middleSupport fill:transparent,stroke:transparent
+    style middle fill:transparent,stroke:transparent
+    style lower fill:transparent,stroke:transparent
 ```
 
 ## Main Runtime Flow
